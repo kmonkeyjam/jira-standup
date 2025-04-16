@@ -3,6 +3,7 @@ from requests.auth import HTTPBasicAuth
 import datetime
 import os
 import argparse
+from urllib.parse import quote
 
 # === CONFIGURATION ===
 JIRA_BASE_URL = "https://harness.atlassian.net"
@@ -108,6 +109,10 @@ def get_issue_updates(issue, start_time, end_time):
     updates.sort(key=lambda x: x['time'])
     return updates if updates else None
 
+def get_jira_link(key):
+    # URL encode the key for safety, though in this case it's probably not needed
+    return f"{JIRA_BASE_URL}/browse/{key}"
+
 def print_all_updates(issues, start_time, end_time, debug=False):
     # Group issues by assignee
     assignee_groups = {}
@@ -136,7 +141,7 @@ def print_all_updates(issues, start_time, end_time, debug=False):
         print(f"{assignee_name}:")
         
         for issue in issues:
-            key = issue['key']
+            key = get_jira_link(issue['key'])
             updates_text = []
             
             for update in issue['updates']:
