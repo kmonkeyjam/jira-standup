@@ -19,4 +19,5 @@ export JIRA_API_TOKEN=XXXX
 Run the script with start and end time:
 ```bash
 python get_jira_updates.py --start 10:00 --end 11:00
+python get_jira_updates.py --start 10:00 --end 11:00 --debug
 ```
