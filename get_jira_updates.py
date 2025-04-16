@@ -34,7 +34,7 @@ def get_recent_issues(start_time, end_time):
         "jql": jql,
         "expand": "changelog",
         "maxResults": MAX_RESULTS,
-        "fields": ["key", "assignee"]
+        "fields": ["key", "assignee", "summary"]  # Added summary field
     }
 
     try:
@@ -109,9 +109,9 @@ def get_issue_updates(issue, start_time, end_time):
     updates.sort(key=lambda x: x['time'])
     return updates if updates else None
 
-def get_jira_link(key):
-    # URL encode the key for safety, though in this case it's probably not needed
-    return f"{JIRA_BASE_URL}/browse/{key}"
+def get_jira_link(key, debug=False):
+    """Get either the full Jira link (debug) or just the key (normal mode)"""
+    return f"{JIRA_BASE_URL}/browse/{key}" if debug else key
 
 def get_ready_issues(assignee_name):
     """Get issues that are assigned to the person and marked as Ready for development"""
@@ -146,6 +146,7 @@ def print_all_updates(issues, start_time, end_time, debug=False):
                 assignee_groups[assignee_name] = []
             assignee_groups[assignee_name].append({
                 "key": issue.get("key"),
+                "summary": fields.get("summary", "No summary"),
                 "updates": updates
             })
             
@@ -164,7 +165,8 @@ def print_all_updates(issues, start_time, end_time, debug=False):
         
         # Print updates
         for issue in issues:
-            key = get_jira_link(issue['key'])
+            key = get_jira_link(issue['key'], debug)
+            summary = issue['summary']
             updates_text = []
             
             for update in issue['updates']:
@@ -177,22 +179,22 @@ def print_all_updates(issues, start_time, end_time, debug=False):
                     updates_text.append(update['content'])
             
             # Format based on number of updates
+            print(f"{key} - {summary}")
             if len(updates_text) == 1:
-                print(f"{key}: {updates_text[0]}")
+                print(f"• {updates_text[0]}")
             else:
-                print(f"{key}:")
                 for text in updates_text:
                     print(f"• {text}")
+            print()  # Add a line between issues
         
         # Print ready issues if any exist for this assignee
         if assignee_name in ready_issues and ready_issues[assignee_name]:
-            print("\nUp next:")
+            print("Up next:")
             for issue in ready_issues[assignee_name]:
                 key = issue['key']
                 summary = issue.get('fields', {}).get('summary', 'No summary')
-                print(f"• {get_jira_link(key)}: {summary}")
-        
-        print()  # Single blank line between assignees
+                print(f"• {get_jira_link(key, debug)} - {summary}")
+            print()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Get Jira updates within a time window')
