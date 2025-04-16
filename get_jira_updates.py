@@ -100,14 +100,15 @@ def get_issue_updates(issue, start_time, end_time):
             updates.append({
                 'time': comment['created'],
                 'type': 'COMMENT',
-                'content': f"{comment['author']['displayName']}: {comment_text}"
+                'author': comment['author']['displayName'],
+                'content': comment_text
             })
 
     # Sort updates by timestamp
     updates.sort(key=lambda x: x['time'])
     return updates if updates else None
 
-def print_all_updates(issues, start_time, end_time):
+def print_all_updates(issues, start_time, end_time, debug=False):
     # Group issues by assignee
     assignee_groups = {}
     
@@ -131,11 +132,30 @@ def print_all_updates(issues, start_time, end_time):
         return
 
     for assignee_name, issues in sorted(assignee_groups.items()):
-        print(f"\n=== {assignee_name} ===")
+        # Start with assignee name
+        print(f"{assignee_name}:")
+        
         for issue in issues:
-            print(f"\n  {issue['key']}:")
+            key = issue['key']
+            updates_text = []
+            
             for update in issue['updates']:
-                print(f"    [{update['time']}] {update['type']}: {update['content']}")
+                if debug:
+                    if update['type'] == 'COMMENT':
+                        updates_text.append(f"[{update['time']}] {update['type']}: {update['author']}: {update['content']}")
+                    else:
+                        updates_text.append(f"[{update['time']}] {update['type']}: {update['content']}")
+                else:
+                    updates_text.append(update['content'])
+            
+            # Format based on number of updates
+            if len(updates_text) == 1:
+                print(f"{key}: {updates_text[0]}")
+            else:
+                print(f"{key}:")
+                for text in updates_text:
+                    print(f"• {text}")
+        print()  # Single blank line between assignees
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Get Jira updates within a time window')
@@ -143,8 +163,10 @@ if __name__ == "__main__":
                       help='Start time in HH:MM format (default: 10:00)')
     parser.add_argument('--end', type=parse_time, default="11:00",
                       help='End time in HH:MM format (default: 11:00)')
+    parser.add_argument('--debug', action='store_true',
+                      help='Show detailed debug information including timestamps')
     
     args = parser.parse_args()
     
     issues, start_time, end_time = get_recent_issues(args.start.strftime("%H:%M"), args.end.strftime("%H:%M"))
-    print_all_updates(issues, start_time, end_time)
+    print_all_updates(issues, start_time, end_time, args.debug)
