@@ -6,10 +6,14 @@ import argparse
 from urllib.parse import quote
 
 # === CONFIGURATION ===
-JIRA_BASE_URL = "https://harness.atlassian.net"
-JIRA_PROJECT_KEY = "IR"
-EMAIL = "tina.huang@harness.io"
-API_TOKEN = os.getenv("JIRA_API_TOKEN")  # Store your token securely
+JIRA_BASE_URL = os.getenv("JIRA_BASE_URL")
+JIRA_PROJECT_KEY = os.getenv("JIRA_PROJECT_KEY")
+EMAIL = os.getenv("JIRA_EMAIL")
+API_TOKEN = os.getenv("JIRA_API_TOKEN")
+
+if not all([JIRA_BASE_URL, JIRA_PROJECT_KEY, EMAIL, API_TOKEN]):
+    raise ValueError("All environment variables must be set: JIRA_BASE_URL, JIRA_PROJECT_KEY, JIRA_EMAIL, JIRA_API_TOKEN")
+
 MAX_RESULTS = 50
 
 def parse_time(time_str):
@@ -29,7 +33,7 @@ def get_recent_issues(start_time, end_time):
     today = datetime.date.today()
     start_datetime = f"{today} {start_time}"
     end_datetime = f"{today} {end_time}"
-    jql = f'project = IR AND updated >= "{start_datetime}" AND updated <= "{end_datetime}"'
+    jql = f'project = {JIRA_PROJECT_KEY} AND updated >= "{start_datetime}" AND updated <= "{end_datetime}"'
     params = {
         "jql": jql,
         "expand": "changelog",
