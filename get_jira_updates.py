@@ -2,14 +2,21 @@ import requests
 from requests.auth import HTTPBasicAuth
 import datetime
 import os
+import argparse
 
 # === CONFIGURATION ===
 JIRA_BASE_URL = "https://harness.atlassian.net"
 JIRA_PROJECT_KEY = "IR"
-DAYS_BACK = 1
 EMAIL = "tina.huang@harness.io"
 API_TOKEN = os.getenv("JIRA_API_TOKEN")  # Store your token securely
 MAX_RESULTS = 50
+
+def parse_time(time_str):
+    try:
+        # Parse time in HH:MM format
+        return datetime.datetime.strptime(time_str, "%H:%M").time()
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"Invalid time format. Please use HH:MM (e.g., 10:00)")
 
 # === AUTH ===
 auth = HTTPBasicAuth(EMAIL, API_TOKEN)
@@ -17,11 +24,11 @@ headers = {
     "Accept": "application/json"
 }
 
-def get_recent_issues():
+def get_recent_issues(start_time, end_time):
     today = datetime.date.today()
-    start_time = f"{today} 10:00"
-    end_time = f"{today} 11:00"
-    jql = f'project = IR AND updated >= "{start_time}" AND updated <= "{end_time}"'
+    start_datetime = f"{today} {start_time}"
+    end_datetime = f"{today} {end_time}"
+    jql = f'project = IR AND updated >= "{start_datetime}" AND updated <= "{end_datetime}"'
     params = {
         "jql": jql,
         "expand": "changelog",
@@ -38,7 +45,7 @@ def get_recent_issues():
 
     data = response.json()
     print(f"Found {len(data.get('issues', []))} issues")
-    return data.get("issues", []), start_time, end_time
+    return data.get("issues", []), start_datetime, end_datetime
 
 def get_issue_comments(issue_key):
     url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}/comment"
@@ -51,25 +58,17 @@ def get_issue_comments(issue_key):
 
     return response.json().get("comments", [])
 
-def print_issue_updates(issue, start_time, end_time):
+def get_issue_updates(issue, start_time, end_time):
+    """Get updates for a single issue within the time window"""
     if not isinstance(issue, dict):
-        print(f"Unexpected issue format: {issue}")
-        return
+        return None
 
     key = issue.get("key", "NO-KEY")
-    fields = issue.get("fields", {})
-    if not fields:
-        print(f"No fields found for issue {key}")
-    
-    assignee = fields.get("assignee", {})
-    assignee_name = assignee.get("displayName") if assignee else "Unassigned"
+    updates = []
     
     # Convert time strings to datetime objects for comparison
     start_dt = datetime.datetime.strptime(f"{start_time}:00", "%Y-%m-%d %H:%M:%S")
     end_dt = datetime.datetime.strptime(f"{end_time}:00", "%Y-%m-%d %H:%M:%S")
-
-    # Combine and sort all updates by timestamp
-    updates = []
     
     # Add status changes
     for history in issue.get("changelog", {}).get("histories", []):
@@ -88,7 +87,6 @@ def print_issue_updates(issue, start_time, end_time):
     for comment in comments:
         created_time = datetime.datetime.strptime(comment['created'].split('.')[0], "%Y-%m-%dT%H:%M:%S")
         if start_dt <= created_time <= end_dt:
-            # Extract text from ADF format
             comment_text = ""
             try:
                 for content in comment['body']['content']:
@@ -105,19 +103,48 @@ def print_issue_updates(issue, start_time, end_time):
                 'content': f"{comment['author']['displayName']}: {comment_text}"
             })
 
-    # Only print the header if we have updates in the time window
-    if updates:
-        print(f"\n=== {key} - {assignee_name} ===")
-        print("Updates:")
+    # Sort updates by timestamp
+    updates.sort(key=lambda x: x['time'])
+    return updates if updates else None
+
+def print_all_updates(issues, start_time, end_time):
+    # Group issues by assignee
+    assignee_groups = {}
+    
+    for issue in issues:
+        fields = issue.get("fields", {})
+        assignee = fields.get("assignee", {})
+        assignee_name = assignee.get("displayName") if assignee else "Unassigned"
         
-        # Sort all updates by timestamp
-        updates.sort(key=lambda x: x['time'])
-        
-        # Print updates in chronological order
-        for update in updates:
-            print(f"[{update['time']}] {update['type']}: {update['content']}")
+        updates = get_issue_updates(issue, start_time, end_time)
+        if updates:  # Only include issues with updates in the time window
+            if assignee_name not in assignee_groups:
+                assignee_groups[assignee_name] = []
+            assignee_groups[assignee_name].append({
+                "key": issue.get("key"),
+                "updates": updates
+            })
+    
+    # Print grouped updates
+    if not assignee_groups:
+        print("No updates found in the specified time window.")
+        return
+
+    for assignee_name, issues in sorted(assignee_groups.items()):
+        print(f"\n=== {assignee_name} ===")
+        for issue in issues:
+            print(f"\n  {issue['key']}:")
+            for update in issue['updates']:
+                print(f"    [{update['time']}] {update['type']}: {update['content']}")
 
 if __name__ == "__main__":
-    issues, start_time, end_time = get_recent_issues()
-    for issue in issues:
-        print_issue_updates(issue, start_time, end_time)
+    parser = argparse.ArgumentParser(description='Get Jira updates within a time window')
+    parser.add_argument('--start', type=parse_time, default="10:00",
+                      help='Start time in HH:MM format (default: 10:00)')
+    parser.add_argument('--end', type=parse_time, default="11:00",
+                      help='End time in HH:MM format (default: 11:00)')
+    
+    args = parser.parse_args()
+    
+    issues, start_time, end_time = get_recent_issues(args.start.strftime("%H:%M"), args.end.strftime("%H:%M"))
+    print_all_updates(issues, start_time, end_time)

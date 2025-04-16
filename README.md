@@ -10,3 +10,13 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+Set your jira token:
+Create a classic token: https://id.atlassian.com/manage-profile/security/api-tokens
+```bash
+export JIRA_API_TOKEN=XXXX
+```
+
+Run the script with start and end time:
+```bash
+python get_jira_updates.py --start 10:00 --end 11:00
+```
