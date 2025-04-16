@@ -113,9 +113,27 @@ def get_jira_link(key):
     # URL encode the key for safety, though in this case it's probably not needed
     return f"{JIRA_BASE_URL}/browse/{key}"
 
+def get_ready_issues(assignee_name):
+    """Get issues that are assigned to the person and marked as Ready for development"""
+    jql = f'project = {JIRA_PROJECT_KEY} AND assignee = "{assignee_name}" AND status = "Ready for development"'
+    params = {
+        "jql": jql,
+        "fields": ["key", "summary"],
+        "maxResults": MAX_RESULTS
+    }
+
+    try:
+        response = requests.get(f"{JIRA_BASE_URL}/rest/api/3/search", headers=headers, auth=auth, params=params)
+        response.raise_for_status()
+        return response.json().get("issues", [])
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching ready issues: {e}")
+        return []
+
 def print_all_updates(issues, start_time, end_time, debug=False):
     # Group issues by assignee
     assignee_groups = {}
+    ready_issues = {}
     
     for issue in issues:
         fields = issue.get("fields", {})
@@ -130,6 +148,10 @@ def print_all_updates(issues, start_time, end_time, debug=False):
                 "key": issue.get("key"),
                 "updates": updates
             })
+            
+            # Get ready issues for this assignee if we haven't already
+            if assignee_name not in ready_issues and assignee_name != "Unassigned":
+                ready_issues[assignee_name] = get_ready_issues(assignee_name)
     
     # Print grouped updates
     if not assignee_groups:
@@ -140,6 +162,7 @@ def print_all_updates(issues, start_time, end_time, debug=False):
         # Start with assignee name
         print(f"{assignee_name}:")
         
+        # Print updates
         for issue in issues:
             key = get_jira_link(issue['key'])
             updates_text = []
@@ -160,6 +183,15 @@ def print_all_updates(issues, start_time, end_time, debug=False):
                 print(f"{key}:")
                 for text in updates_text:
                     print(f"• {text}")
+        
+        # Print ready issues if any exist for this assignee
+        if assignee_name in ready_issues and ready_issues[assignee_name]:
+            print("\nUp next:")
+            for issue in ready_issues[assignee_name]:
+                key = issue['key']
+                summary = issue.get('fields', {}).get('summary', 'No summary')
+                print(f"• {get_jira_link(key)}: {summary}")
+        
         print()  # Single blank line between assignees
 
 if __name__ == "__main__":
