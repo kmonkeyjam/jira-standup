@@ -23,22 +23,31 @@ def parse_time(time_str):
     except ValueError:
         raise argparse.ArgumentTypeError(f"Invalid time format. Please use HH:MM (e.g., 10:00)")
 
+def parse_datetime(datetime_str):
+    try:
+        # Try parsing with date and time
+        return datetime.datetime.strptime(datetime_str, "%Y-%m-%d %H:%M")
+    except ValueError:
+        try:
+            # Try parsing with just time (use today's date)
+            time = datetime.datetime.strptime(datetime_str, "%H:%M").time()
+            return datetime.datetime.combine(datetime.date.today(), time)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"Invalid datetime format. Please use either 'HH:MM' or 'YYYY-MM-DD HH:MM'")
+
 # === AUTH ===
 auth = HTTPBasicAuth(EMAIL, API_TOKEN)
 headers = {
     "Accept": "application/json"
 }
 
-def get_recent_issues(start_time, end_time):
-    today = datetime.date.today()
-    start_datetime = f"{today} {start_time}"
-    end_datetime = f"{today} {end_time}"
+def get_recent_issues(start_datetime, end_datetime):
     jql = f'project = {JIRA_PROJECT_KEY} AND updated >= "{start_datetime}" AND updated <= "{end_datetime}"'
     params = {
         "jql": jql,
         "expand": "changelog",
         "maxResults": MAX_RESULTS,
-        "fields": ["key", "assignee", "summary"]  # Added summary field
+        "fields": ["key", "assignee", "summary"]
     }
 
     try:
@@ -72,8 +81,8 @@ def get_issue_updates(issue, start_time, end_time):
     updates = []
     
     # Convert time strings to datetime objects for comparison
-    start_dt = datetime.datetime.strptime(f"{start_time}:00", "%Y-%m-%d %H:%M:%S")
-    end_dt = datetime.datetime.strptime(f"{end_time}:00", "%Y-%m-%d %H:%M:%S")
+    start_dt = datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M")
+    end_dt = datetime.datetime.strptime(end_time, "%Y-%m-%d %H:%M")
     
     # Add status changes
     for history in issue.get("changelog", {}).get("histories", []):
@@ -202,14 +211,31 @@ def print_all_updates(issues, start_time, end_time, debug=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Get Jira updates within a time window')
-    parser.add_argument('--start', type=parse_time, default="10:00",
-                      help='Start time in HH:MM format (default: 10:00)')
-    parser.add_argument('--end', type=parse_time, default="11:00",
-                      help='End time in HH:MM format (default: 11:00)')
+    parser.add_argument('--start', type=parse_datetime, default=None,
+                      help='Start time in HH:MM format (uses today) or YYYY-MM-DD HH:MM format')
+    parser.add_argument('--end', type=parse_datetime, default=None,
+                      help='End time in HH:MM format (uses today) or YYYY-MM-DD HH:MM format')
+    parser.add_argument('--days', type=int, default=0,
+                      help='Number of past days to include (default: 0, meaning today only)')
     parser.add_argument('--debug', action='store_true',
                       help='Show detailed debug information including timestamps')
     
     args = parser.parse_args()
     
-    issues, start_time, end_time = get_recent_issues(args.start.strftime("%H:%M"), args.end.strftime("%H:%M"))
+    # Set default times if not provided
+    now = datetime.datetime.now()
+    if args.start is None:
+        args.start = now.replace(hour=10, minute=0, second=0, microsecond=0)
+    if args.end is None:
+        args.end = now.replace(hour=11, minute=0, second=0, microsecond=0)
+    
+    # Adjust dates based on days parameter
+    if args.days > 0:
+        args.start = args.start - datetime.timedelta(days=args.days)
+    
+    # Format dates consistently without seconds
+    start_str = args.start.strftime("%Y-%m-%d %H:%M")
+    end_str = args.end.strftime("%Y-%m-%d %H:%M")
+    
+    issues, start_time, end_time = get_recent_issues(start_str, end_str)
     print_all_updates(issues, start_time, end_time, args.debug)
